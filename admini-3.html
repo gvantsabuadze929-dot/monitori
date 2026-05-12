@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="ka">
+<head>
+    <meta charset="UTF-8">
+    <title>ადმინ პანელი - კარატე v6</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { font-family: system-ui, sans-serif; }
+        .completed-row { opacity: 0.4; background-color: #f8fafc; }
+    </style>
+</head>
+<body class="bg-slate-100 p-4">
+    <div class="max-w-7xl mx-auto">
+        <div class="flex justify-between items-center mb-6">
+            <h1 class="text-2xl font-black text-slate-800 uppercase italic">🥋 მართვის ცენტრი</h1>
+            <div class="flex items-center gap-3">
+                <span id="sync-status" class="text-xs font-bold text-slate-400">⏳ დაკავშირება...</span>
+                <button onclick="clearAll()" class="bg-red-100 text-red-600 px-4 py-2 rounded-lg font-bold text-xs hover:bg-red-200 transition-all">🧹 ბაზის გასუფთავება</button>
+            </div>
+        </div>
+        
+        <!-- ფორმა -->
+        <div class="bg-white p-6 rounded-2xl shadow-xl mb-8 border-b-4 border-slate-300">
+            <form id="match-form" class="space-y-4">
+                <div class="grid grid-cols-1 md:grid-cols-5 gap-4 items-end">
+                    <div class="col-span-2 space-y-2">
+                        <label class="text-[10px] font-bold text-slate-400 uppercase ml-1">მებრძოლი 1 და კლუბი</label>
+                        <div class="flex gap-2">
+                            <input type="text" id="p1" placeholder="სახელი გვარი" class="w-full border-2 border-slate-100 p-2.5 rounded-lg focus:border-blue-500 outline-none transition-all" required>
+                            <input type="text" id="c1" placeholder="კლუბი" class="w-24 border-2 border-slate-100 p-2.5 rounded-lg text-center font-bold" required>
+                        </div>
+                    </div>
+                    
+                    <div class="flex justify-center pb-3">
+                        <span class="bg-slate-100 text-slate-400 px-3 py-1 rounded-full text-xs font-black">VS</span>
+                    </div>
+
+                    <div class="col-span-2 space-y-2">
+                        <label class="text-[10px] font-bold text-slate-400 uppercase ml-1">მებრძოლი 2 და კლუბი</label>
+                        <div class="flex gap-2">
+                            <input type="text" id="p2" placeholder="სახელი გვარი" class="w-full border-2 border-slate-100 p-2.5 rounded-lg focus:border-blue-500 outline-none transition-all" required>
+                            <input type="text" id="c2" placeholder="კლუბი" class="w-24 border-2 border-slate-100 p-2.5 rounded-lg text-center font-bold" required>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="flex gap-4 pt-2">
+                    <select id="tatami" class="w-48 border-2 border-slate-100 p-3 rounded-lg font-black text-blue-600 bg-slate-50 cursor-pointer">
+                        <option value="1">🔵 ტატამი 1</option>
+                        <option value="2">🔴 ტატამი 2</option>
+                    </select>
+                    <button type="submit" class="flex-grow bg-slate-900 text-white font-black rounded-lg py-3 hover:bg-black transition-all active:scale-95 shadow-lg uppercase tracking-widest">დამატება სიაში</button>
+                </div>
+            </form>
+        </div>
+
+        <!-- ორი სიის სვეტები -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            <div class="bg-white rounded-2xl shadow-lg border-t-8 border-blue-500 overflow-hidden">
+                <div class="bg-blue-50 p-4 border-b border-blue-100 flex justify-between items-center">
+                    <h2 class="font-black text-blue-700 uppercase">ტატამი 1</h2>
+                    <span id="count-1" class="bg-blue-200 text-blue-700 text-xs px-2 py-1 rounded-md font-bold">0</span>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-sm">
+                        <tbody id="admin-list-1" class="divide-y divide-slate-100"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="bg-white rounded-2xl shadow-lg border-t-8 border-red-500 overflow-hidden">
+                <div class="bg-red-50 p-4 border-b border-red-100 flex justify-between items-center">
+                    <h2 class="font-black text-red-700 uppercase">ტატამი 2</h2>
+                    <span id="count-2" class="bg-red-200 text-red-700 text-xs px-2 py-1 rounded-md font-bold">0</span>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-sm">
+                        <tbody id="admin-list-2" class="divide-y divide-slate-100"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Firebase SDK -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+        import { getDatabase, ref, set, onValue, remove } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+
+        // ==============================
+        // 🔥 შენი Firebase კონფიგი აქ
+        // ==============================
+        const firebaseConfig = {
+            apiKey: "AIzaSyDSaW1w_ETXCTBFd5f3Vi4qMM_CXxZGzXQ",
+            authDomain: "gvantsa-d81b8.firebaseapp.com",
+            databaseURL: "https://gvantsa-d81b8-default-rtdb.firebaseio.com",
+            projectId: "gvantsa-d81b8",
+            storageBucket: "gvantsa-d81b8.firebasestorage.app",
+            messagingSenderId: "317477171856",
+            appId: "1:317477171856:web:f28aff3d09855350739e15",
+            measurementId: "G-R107GL7H2C"
+        };
+        // ==============================
+
+        const app = initializeApp(firebaseConfig);
+        const db = getDatabase(app);
+        const matchesRef = ref(db, 'matches');
+
+        let matches = [];
+
+        // სტატუს ინდიკატორი
+        const statusEl = document.getElementById('sync-status');
+
+        // Firebase-დან მონაცემების წაკითხვა რეალურ დროში
+        onValue(matchesRef, (snapshot) => {
+            const data = snapshot.val();
+            matches = data ? Object.values(data) : [];
+            matches.sort((a, b) => a.id - b.id);
+            statusEl.textContent = '🟢 სინქრონიზებულია';
+            statusEl.className = 'text-xs font-bold text-emerald-600';
+            render();
+        }, (error) => {
+            statusEl.textContent = '🔴 კავშირი წყდება';
+            statusEl.className = 'text-xs font-bold text-red-500';
+        });
+
+        // Firebase-ში შენახვა
+        async function saveToFirebase() {
+            const obj = {};
+            matches.forEach(m => { obj[m.id] = m; });
+            await set(matchesRef, obj);
+        }
+
+        document.getElementById('match-form').onsubmit = async (e) => {
+            e.preventDefault();
+            matches.push({
+                id: Date.now(),
+                p1: document.getElementById('p1').value,
+                c1: document.getElementById('c1').value,
+                p2: document.getElementById('p2').value,
+                c2: document.getElementById('c2').value,
+                tatami: document.getElementById('tatami').value,
+                completed: false
+            });
+            e.target.reset();
+            await saveToFirebase();
+        };
+
+        window.toggle = async (id) => {
+            const m = matches.find(x => x.id === id);
+            m.completed = !m.completed;
+            await saveToFirebase();
+        };
+
+        window.remove = async (id) => {
+            if(confirm('წავშალოთ ჩანაწერი?')) {
+                matches = matches.filter(x => x.id !== id);
+                await saveToFirebase();
+            }
+        };
+
+        window.clearAll = async () => {
+            if(confirm('გსურთ მთლიანი ბაზის წაშლა? (ეს მოქმედება შეუქცევადია)')) {
+                matches = [];
+                await set(matchesRef, null);
+            }
+        };
+
+        function render() {
+            for (let t = 1; t <= 2; t++) {
+                const list = document.getElementById(`admin-list-${t}`);
+                const countBadge = document.getElementById(`count-${t}`);
+                const tatamiMatches = matches.filter(m => m.tatami == t);
+                
+                countBadge.innerText = tatamiMatches.length;
+                list.innerHTML = tatamiMatches.map((m, i) => `
+                    <tr class="hover:bg-slate-50 transition-colors ${m.completed ? 'completed-row' : ''}">
+                        <td class="p-4 font-bold text-slate-400 w-10">#${i+1}</td>
+                        <td class="p-4">
+                            <div class="font-bold text-slate-800">${m.p1} <span class="text-blue-600 ml-1 text-xs">[${m.c1}]</span></div>
+                            <div class="text-[10px] text-slate-400 font-bold my-0.5">VS</div>
+                            <div class="font-bold text-slate-800">${m.p2} <span class="text-blue-600 ml-1 text-xs">[${m.c2}]</span></div>
+                        </td>
+                        <td class="p-4 text-right space-x-1 whitespace-nowrap">
+                            <button onclick="toggle(${m.id})" class="px-3 py-1.5 rounded-md text-[10px] font-black uppercase tracking-tighter ${m.completed ? 'bg-orange-100 text-orange-600' : 'bg-emerald-100 text-emerald-700'}">
+                                ${m.completed ? 'დაბრუნება' : 'დასრულება'}
+                            </button>
+                            <button onclick="remove(${m.id})" class="bg-slate-100 text-slate-400 p-1.5 rounded-md hover:text-red-500 transition-colors">✖</button>
+                        </td>
+                    </tr>
+                `).join('');
+            }
+        }
+    </script>
+</body>
+</html>
