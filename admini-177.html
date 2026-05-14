@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html lang="ka">
+<head>
+    <meta charset="UTF-8">
+    <title>ადმინ პანელი - კარატე</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { font-family: system-ui, sans-serif; }
+        .completed-row { opacity: 0.4; background-color: #f8fafc; }
+        #edit-modal { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.5); z-index:50; align-items:center; justify-content:center; }
+        #edit-modal.open { display:flex; }
+        .highlight { background: #fef08a; border-radius: 2px; }
+        .tatami-scroll-body { max-height: 420px; overflow-y: auto; display: block; scrollbar-width: thin; scrollbar-color: #cbd5e1 #f1f5f9; }
+        .tatami-scroll-body::-webkit-scrollbar { width: 6px; }
+        .tatami-scroll-body::-webkit-scrollbar-track { background: #f1f5f9; border-radius: 3px; }
+        .tatami-scroll-body::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+        .tatami-scroll-body::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
+        /* drag & drop */
+        tr[draggable] { cursor: grab; }
+        tr[draggable]:active { cursor: grabbing; }
+        tr.dragging { opacity: 0.25; background: #cbd5e1 !important; outline: 2px dashed #94a3b8; }
+        tr.drag-over-top { box-shadow: inset 0 4px 0 0 #2563eb; background: #eff6ff !important; }
+        tr.drag-over-bottom { box-shadow: inset 0 -4px 0 0 #2563eb; background: #eff6ff !important; }
+        tr[draggable] { transition: background 1.5s ease; }
+        tr.drop-flash { background: #bfdbfe !important; transition: none; }
+        .drag-handle { cursor: grab; color: #94a3b8; padding: 0 6px; font-size: 1rem; user-select: none; line-height:1; }
+        .drag-handle:hover { color: #475569; }
+    </style>
+</head>
+<body class="bg-slate-100 p-4">
+
+<!-- რედაქტირების მოდალი -->
+<div id="edit-modal">
+    <div class="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-lg mx-4">
+        <h2 class="text-lg font-black text-slate-800 mb-4">✏️ ჩანაწერის რედაქტირება</h2>
+        <input type="hidden" id="edit-id">
+        <div class="space-y-3">
+            <div class="flex gap-2">
+                <input type="text" id="edit-p1" placeholder="მებრძოლი 1" class="flex-1 border-2 border-slate-200 p-2.5 rounded-lg focus:border-blue-500 outline-none">
+                <input type="text" id="edit-c1" placeholder="კლუბი" class="w-24 border-2 border-slate-200 p-2.5 rounded-lg text-center font-bold focus:border-blue-500 outline-none">
+            </div>
+            <div class="flex gap-2">
+                <input type="text" id="edit-p2" placeholder="მებრძოლი 2" class="flex-1 border-2 border-slate-200 p-2.5 rounded-lg focus:border-blue-500 outline-none">
+                <input type="text" id="edit-c2" placeholder="კლუბი" class="w-24 border-2 border-slate-200 p-2.5 rounded-lg text-center font-bold focus:border-blue-500 outline-none">
+            </div>
+            <select id="edit-tatami" class="w-full border-2 border-slate-200 p-2.5 rounded-lg font-bold focus:border-blue-500 outline-none">
+                <option value="1">🔵 ტატამი 1</option>
+                <option value="2">🔴 ტატამი 2</option>
+                <option value="3">🟢 ტატამი 3</option>
+                <option value="4">🟡 ტატამი 4</option>
+            </select>
+        </div>
+        <div class="flex gap-3 mt-5">
+            <button onclick="closeModal()" class="flex-1 bg-slate-100 text-slate-600 font-bold py-2.5 rounded-lg hover:bg-slate-200 transition-all">გაუქმება</button>
+            <button onclick="saveEdit()" class="flex-1 bg-slate-900 text-white font-bold py-2.5 rounded-lg hover:bg-black transition-all">შენახვა ✓</button>
+        </div>
+    </div>
+</div>
+
+<div class="max-w-7xl mx-auto">
+
+    <!-- სათაური -->
+    <div class="flex flex-wrap justify-between items-center gap-3 mb-6">
+        <h1 class="text-2xl font-black text-slate-800 uppercase italic">🥋 მართვის ცენტრი</h1>
+        <div class="flex items-center gap-3 flex-wrap">
+            <div class="relative">
+                <span class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">🔍</span>
+                <input type="text" id="search-input" placeholder="მებრძოლის ძებნა..." oninput="render()" class="pl-8 pr-4 py-2 border-2 border-slate-200 rounded-lg text-sm focus:border-blue-500 outline-none w-56">
+            </div>
+            <span id="sync-status" class="text-xs font-bold text-slate-400">⏳ დაკავშირება...</span>
+            <button onclick="clearAll()" class="bg-red-100 text-red-600 px-4 py-2 rounded-lg font-bold text-xs hover:bg-red-200 transition-all">🧹 გასუფთავება</button>
+        </div>
+    </div>
+
+    <!-- ფორმა -->
+    <div class="bg-white p-6 rounded-2xl shadow-xl mb-8 border-b-4 border-slate-300">
+        <form id="match-form" class="space-y-4">
+            <div class="grid grid-cols-1 md:grid-cols-5 gap-4 items-end">
+                <div class="col-span-2 space-y-2">
+                    <label class="text-[10px] font-bold text-slate-400 uppercase ml-1">მებრძოლი 1 და კლუბი</label>
+                    <div class="flex gap-2">
+                        <input type="text" id="p1" placeholder="სახელი გვარი" class="w-full border-2 border-slate-100 p-2.5 rounded-lg focus:border-blue-500 outline-none transition-all" required>
+                        <input type="text" id="c1" placeholder="კლუბი" class="w-24 border-2 border-slate-100 p-2.5 rounded-lg text-center font-bold focus:border-blue-500 outline-none" required>
+                    </div>
+                </div>
+                <div class="flex justify-center pb-3">
+                    <span class="bg-slate-100 text-slate-400 px-3 py-1 rounded-full text-xs font-black">VS</span>
+                </div>
+                <div class="col-span-2 space-y-2">
+                    <label class="text-[10px] font-bold text-slate-400 uppercase ml-1">მებრძოლი 2 და კლუბი</label>
+                    <div class="flex gap-2">
+                        <input type="text" id="p2" placeholder="სახელი გვარი" class="w-full border-2 border-slate-100 p-2.5 rounded-lg focus:border-blue-500 outline-none transition-all" required>
+                        <input type="text" id="c2" placeholder="კლუბი" class="w-24 border-2 border-slate-100 p-2.5 rounded-lg text-center font-bold focus:border-blue-500 outline-none" required>
+                    </div>
+                </div>
+            </div>
+            <div class="flex gap-4 pt-2">
+                <select id="tatami" class="w-52 border-2 border-slate-100 p-3 rounded-lg font-black text-blue-600 bg-slate-50 cursor-pointer">
+                    <option value="1">🔵 ტატამი 1</option>
+                    <option value="2">🔴 ტატამი 2</option>
+                    <option value="3">🟢 ტატამი 3</option>
+                    <option value="4">🟡 ტატამი 4</option>
+                </select>
+                <button type="submit" class="flex-grow bg-slate-900 text-white font-black rounded-lg py-3 hover:bg-black transition-all active:scale-95 shadow-lg uppercase tracking-widest">+ დამატება სიაში</button>
+            </div>
+        </form>
+    </div>
+
+    <!-- ზედა რიგი -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+        <div class="bg-white rounded-2xl shadow-lg border-t-8 border-blue-500 overflow-hidden">
+            <div class="bg-blue-50 p-4 border-b border-blue-100 flex justify-between items-center">
+                <h2 class="font-black text-blue-700 uppercase text-lg">🔵 ტატამი 1</h2>
+                <span id="count-1" class="bg-blue-200 text-blue-700 text-xs px-2 py-1 rounded-md font-bold">0</span>
+            </div>
+            <div class="tatami-scroll-body"><table class="w-full text-sm"><tbody id="admin-list-1" class="divide-y divide-slate-100"></tbody></table></div>
+        </div>
+        <div class="bg-white rounded-2xl shadow-lg border-t-8 border-red-500 overflow-hidden">
+            <div class="bg-red-50 p-4 border-b border-red-100 flex justify-between items-center">
+                <h2 class="font-black text-red-700 uppercase text-lg">🔴 ტატამი 2</h2>
+                <span id="count-2" class="bg-red-200 text-red-700 text-xs px-2 py-1 rounded-md font-bold">0</span>
+            </div>
+            <div class="tatami-scroll-body"><table class="w-full text-sm"><tbody id="admin-list-2" class="divide-y divide-slate-100"></tbody></table></div>
+        </div>
+    </div>
+
+    <!-- ქვედა რიგი -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div class="bg-white rounded-2xl shadow-lg border-t-8 border-green-500 overflow-hidden">
+            <div class="bg-green-50 p-4 border-b border-green-100 flex justify-between items-center">
+                <h2 class="font-black text-green-700 uppercase text-lg">🟢 ტატამი 3</h2>
+                <span id="count-3" class="bg-green-200 text-green-700 text-xs px-2 py-1 rounded-md font-bold">0</span>
+            </div>
+            <div class="tatami-scroll-body"><table class="w-full text-sm"><tbody id="admin-list-3" class="divide-y divide-slate-100"></tbody></table></div>
+        </div>
+        <div class="bg-white rounded-2xl shadow-lg border-t-8 border-yellow-400 overflow-hidden">
+            <div class="bg-yellow-50 p-4 border-b border-yellow-100 flex justify-between items-center">
+                <h2 class="font-black text-yellow-700 uppercase text-lg">🟡 ტატამი 4</h2>
+                <span id="count-4" class="bg-yellow-200 text-yellow-700 text-xs px-2 py-1 rounded-md font-bold">0</span>
+            </div>
+            <div class="tatami-scroll-body"><table class="w-full text-sm"><tbody id="admin-list-4" class="divide-y divide-slate-100"></tbody></table></div>
+        </div>
+    </div>
+
+</div>
+
+<script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+    import { getDatabase, ref, set, onValue } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+
+    const firebaseConfig = {
+        apiKey: "AIzaSyDSaW1w_ETXCTBFd5f3Vi4qMM_CXxZGzXQ",
+        authDomain: "gvantsa-d81b8.firebaseapp.com",
+        databaseURL: "https://gvantsa-d81b8-default-rtdb.firebaseio.com",
+        projectId: "gvantsa-d81b8",
+        storageBucket: "gvantsa-d81b8.firebasestorage.app",
+        messagingSenderId: "317477171856",
+        appId: "1:317477171856:web:f28aff3d09855350739e15",
+        measurementId: "G-R107GL7H2C"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const db = getDatabase(app);
+    const matchesRef = ref(db, 'matches');
+    let matches = [];
+    const statusEl = document.getElementById('sync-status');
+
+    onValue(matchesRef, (snapshot) => {
+        const data = snapshot.val();
+        matches = data ? Object.values(data).sort((a, b) => (a.order||0) - (b.order||0) || a.id - b.id) : [];
+        statusEl.textContent = '🟢 სინქრონიზებულია';
+        statusEl.className = 'text-xs font-bold text-emerald-600';
+        render();
+    }, () => {
+        statusEl.textContent = '🔴 კავშირი წყდება';
+        statusEl.className = 'text-xs font-bold text-red-500';
+    });
+
+    async function saveToFirebase() {
+        const obj = {};
+        matches.forEach(m => { obj[m.id] = m; });
+        await set(matchesRef, obj);
+    }
+
+    document.getElementById('match-form').onsubmit = async (e) => {
+        e.preventDefault();
+        const tatami = document.getElementById('tatami').value;
+        const tatamiMatches = matches.filter(m => m.tatami == tatami);
+        const maxOrder = tatamiMatches.length > 0 ? Math.max(...tatamiMatches.map(m => m.order||0)) : 0;
+        matches.push({
+            id: Date.now(), order: maxOrder + 1,
+            p1: document.getElementById('p1').value, c1: document.getElementById('c1').value,
+            p2: document.getElementById('p2').value, c2: document.getElementById('c2').value,
+            tatami, completed: false
+        });
+        e.target.reset();
+        await saveToFirebase();
+    };
+
+    window.toggle = async (id) => {
+        const m = matches.find(x => x.id === id);
+        if (m) { m.completed = !m.completed; await saveToFirebase(); }
+    };
+
+    window.remove = async (id) => {
+        if (confirm('წავშალოთ ჩანაწერი?')) {
+            matches = matches.filter(x => x.id !== id);
+            await saveToFirebase();
+        }
+    };
+
+    window.moveUp = async (id) => {
+        const m = matches.find(x => x.id === id);
+        if (!m) return;
+        const list = matches.filter(x => x.tatami === m.tatami).sort((a,b) => (a.order||0)-(b.order||0));
+        const idx = list.findIndex(x => x.id === id);
+        if (idx <= 0) return;
+        const tmp = m.order; m.order = list[idx-1].order; list[idx-1].order = tmp;
+        await saveToFirebase();
+    };
+
+    window.moveDown = async (id) => {
+        const m = matches.find(x => x.id === id);
+        if (!m) return;
+        const list = matches.filter(x => x.tatami === m.tatami).sort((a,b) => (a.order||0)-(b.order||0));
+        const idx = list.findIndex(x => x.id === id);
+        if (idx >= list.length - 1) return;
+        const tmp = m.order; m.order = list[idx+1].order; list[idx+1].order = tmp;
+        await saveToFirebase();
+    };
+
+    window.openEdit = (id) => {
+        const m = matches.find(x => x.id === id);
+        if (!m) return;
+        document.getElementById('edit-id').value = id;
+        document.getElementById('edit-p1').value = m.p1;
+        document.getElementById('edit-c1').value = m.c1;
+        document.getElementById('edit-p2').value = m.p2;
+        document.getElementById('edit-c2').value = m.c2;
+        document.getElementById('edit-tatami').value = m.tatami;
+        document.getElementById('edit-modal').classList.add('open');
+    };
+
+    window.closeModal = () => document.getElementById('edit-modal').classList.remove('open');
+
+    window.saveEdit = async () => {
+        const id = parseInt(document.getElementById('edit-id').value);
+        const m = matches.find(x => x.id === id);
+        if (!m) return;
+        m.p1 = document.getElementById('edit-p1').value;
+        m.c1 = document.getElementById('edit-c1').value;
+        m.p2 = document.getElementById('edit-p2').value;
+        m.c2 = document.getElementById('edit-c2').value;
+        m.tatami = document.getElementById('edit-tatami').value;
+        closeModal();
+        await saveToFirebase();
+    };
+
+    window.clearAll = async () => {
+        if (confirm('გსურთ მთლიანი ბაზის წაშლა?')) {
+            matches = [];
+            await set(matchesRef, null);
+        }
+    };
+
+    function highlight(text, q) {
+        if (!q) return text;
+        const re = new RegExp(`(${q.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')})`, 'gi');
+        return text.replace(re, '<mark class="highlight">$1</mark>');
+    }
+
+    window.render = function() {
+        const q = (document.getElementById('search-input')?.value || '').toLowerCase().trim();
+        for (let t = 1; t <= 4; t++) {
+            const listEl = document.getElementById(`admin-list-${t}`);
+            const countBadge = document.getElementById(`count-${t}`);
+            const tatamiMatches = matches
+                .filter(m => m.tatami == t)
+                .sort((a, b) => (a.order||0) - (b.order||0));
+            const filtered = q
+                ? tatamiMatches.filter(m =>
+                    m.p1.toLowerCase().includes(q) || m.p2.toLowerCase().includes(q) ||
+                    m.c1.toLowerCase().includes(q) || m.c2.toLowerCase().includes(q))
+                : tatamiMatches;
+            countBadge.innerText = tatamiMatches.length;
+
+            if (filtered.length === 0) {
+                listEl.innerHTML = `<tr><td colspan="3" class="text-center text-slate-400 text-xs py-6">${q ? 'ვერ მოიძებნა' : 'სია ცარიელია'}</td></tr>`;
+                continue;
+            }
+
+            listEl.innerHTML = filtered.map((m) => `
+                <tr draggable="true" data-id="${m.id}" class="hover:bg-slate-50 transition-colors ${m.completed ? 'completed-row' : ''}">
+                    <td class="pl-2 py-3 w-6">
+                        <span class="drag-handle" title="გადაათრიე">⠿</span>
+                    </td>
+                    <td class="pl-1 pr-1 py-3 font-bold text-slate-400 text-xs w-7">#${tatamiMatches.indexOf(m)+1}</td>
+                    <td class="py-3 px-2">
+                        <div class="font-bold text-slate-800 text-sm">${highlight(m.p1, q)} <span class="text-blue-500 text-xs">[${highlight(m.c1, q)}]</span></div>
+                        <div class="text-[10px] text-slate-400 font-bold my-0.5">VS</div>
+                        <div class="font-bold text-slate-800 text-sm">${highlight(m.p2, q)} <span class="text-blue-500 text-xs">[${highlight(m.c2, q)}]</span></div>
+                    </td>
+                    <td class="py-3 pr-2">
+                        <div class="flex flex-col items-end gap-1">
+                            <div class="flex gap-1">
+                                <button onclick="openEdit(${m.id})" class="bg-blue-100 text-blue-600 px-2 py-1 rounded text-[10px] font-black hover:bg-blue-200">✏️</button>
+                                <button onclick="toggle(${m.id})" class="px-2 py-1 rounded text-[10px] font-black ${m.completed ? 'bg-orange-100 text-orange-600' : 'bg-emerald-100 text-emerald-700'}">
+                                    ${m.completed ? '↩' : '✓'}
+                                </button>
+                                <button onclick="remove(${m.id})" class="bg-slate-100 text-slate-400 px-2 py-1 rounded text-[10px] hover:text-red-500">✖</button>
+                            </div>
+                        </div>
+                    </td>
+                </tr>
+            `).join('');
+
+            initDragDrop(listEl, t);
+        }
+    }
+
+    let dragSrcId = null;
+
+    function initDragDrop(tbody, tatami) {
+        tbody.querySelectorAll('tr[draggable]').forEach(row => {
+            row.addEventListener('dragstart', e => {
+                dragSrcId = parseInt(row.dataset.id);
+                e.dataTransfer.effectAllowed = 'move';
+                setTimeout(() => row.classList.add('dragging'), 0);
+            });
+
+            row.addEventListener('dragend', () => {
+                row.classList.remove('dragging');
+                tbody.querySelectorAll('tr').forEach(r => r.classList.remove('drag-over-top','drag-over-bottom'));
+            });
+
+            row.addEventListener('dragover', e => {
+                e.preventDefault();
+                e.dataTransfer.dropEffect = 'move';
+                tbody.querySelectorAll('tr').forEach(r => r.classList.remove('drag-over-top','drag-over-bottom'));
+                const rect = row.getBoundingClientRect();
+                const mid = rect.top + rect.height / 2;
+                row.classList.add(e.clientY < mid ? 'drag-over-top' : 'drag-over-bottom');
+            });
+
+            row.addEventListener('dragleave', () => {
+                row.classList.remove('drag-over-top','drag-over-bottom');
+            });
+
+            row.addEventListener('drop', async e => {
+                e.preventDefault();
+                row.classList.remove('drag-over-top','drag-over-bottom');
+                const targetId = parseInt(row.dataset.id);
+                if (dragSrcId === targetId) return;
+
+                const rect = row.getBoundingClientRect();
+                const mid = rect.top + rect.height / 2;
+                const insertBefore = e.clientY < mid;
+
+                const list = matches
+                    .filter(m => m.tatami == tatami)
+                    .sort((a, b) => (a.order||0) - (b.order||0));
+
+                const src = list.find(m => m.id === dragSrcId);
+                const target = list.find(m => m.id === targetId);
+                if (!src || !target) return;
+
+                // remove src from list, insert relative to target
+                const without = list.filter(m => m.id !== dragSrcId);
+                const tIdx = without.findIndex(m => m.id === targetId);
+                const insertIdx = insertBefore ? tIdx : tIdx + 1;
+                without.splice(insertIdx, 0, src);
+
+                // reassign order values
+                without.forEach((m, i) => { m.order = i + 1; });
+                await saveToFirebase();
+
+                // flash the dropped row: instant blue, then fade back
+                setTimeout(() => {
+                    const dropped = tbody.querySelector(`tr[data-id="${dragSrcId}"]`);
+                    if (dropped) {
+                        dropped.classList.add('drop-flash');
+                        requestAnimationFrame(() => requestAnimationFrame(() => {
+                            dropped.classList.remove('drop-flash');
+                        }));
+                    }
+                }, 80);
+            });
+        });
+    }
+</script>
+</body>
+</html>
